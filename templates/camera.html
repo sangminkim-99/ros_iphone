@@ -58,12 +58,12 @@
 
         function startStreaming() {
             setInterval(() => {
-                // Set canvas size to match video
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                
-                // Draw current video frame to canvas
-                ctx.drawImage(video, 0, 0);
+                // Resize to 320x240 for faster transmission
+                canvas.width = 320;
+                canvas.height = 240;
+
+                // Draw and scale video frame to canvas
+                ctx.drawImage(video, 0, 0, 320, 240);
                 
                 // Convert canvas to base64 JPEG
                 const imageData = canvas.toDataURL('image/jpeg', 0.7);

@@ -32,7 +32,10 @@ def upload_frame():
     img_bytes = base64.b64decode(image_data)
     img_array = np.frombuffer(img_bytes, dtype=np.uint8)
     img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    
+
+    # Resize for lower bandwidth ROS publishing
+    img = cv2.resize(img, (320, 240))
+
     # Publish as ROS message
     height, width, channels = img.shape
     talker.publish(roslibpy.Message({
