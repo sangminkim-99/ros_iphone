@@ -28,6 +28,13 @@
     <p>Status: <span id="status">Disconnected</span></p>
     <p>FPS: <span id="fps">0</span></p>
 
+    <div id="calibration">
+        <button id="captureBtn" onclick="captureCalibFrame()" disabled>Capture Frame</button>
+        <button id="calibrateBtn" onclick="runCalibration()" disabled>Calibrate</button>
+        <button id="resetBtn" onclick="resetCalibration()" disabled>Reset</button>
+        <p>Calibration: <span id="calibStatus">0 frames captured</span></p>
+    </div>
+
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -49,6 +56,28 @@
             video.srcObject = stream;
             status.textContent = 'Connected';
             status.style.color = 'green';
+
+            // Send camera info once video is ready
+            video.addEventListener('loadedmetadata', () => {
+                const track = stream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+                fetch('/camera_info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        width: video.videoWidth,
+                        height: video.videoHeight,
+                        focalLength: settings.focalLength || null,
+                        facingMode: settings.facingMode || null,
+                        focalLengthRange: caps.focalLength || null
+                    })
+                });
+            });
+
+            document.getElementById('captureBtn').disabled = false;
+            document.getElementById('resetBtn').disabled = false;
+
             startStreaming();
         }).catch(err => {
             console.error('Camera access error:', err);
@@ -57,23 +86,35 @@
         });
 
         function startStreaming() {
+            let inFlight = 0;
+            const maxInFlight = 3;  // Allow up to 3 concurrent uploads
+
             setInterval(() => {
-                // Resize to 320x240 for faster transmission
-                canvas.width = 320;
-                canvas.height = 240;
+                // Skip if too many requests in flight
+                if (inFlight >= maxInFlight) return;
+
+                // Resize preserving aspect ratio (max width 320)
+                const maxW = 320;
+                const scale = maxW / video.videoWidth;
+                const w = maxW;
+                const h = Math.round(video.videoHeight * scale);
+                canvas.width = w;
+                canvas.height = h;
 
                 // Draw and scale video frame to canvas
-                ctx.drawImage(video, 0, 0, 320, 240);
-                
+                ctx.drawImage(video, 0, 0, w, h);
+
                 // Convert canvas to base64 JPEG
-                const imageData = canvas.toDataURL('image/jpeg', 0.7);
-                
-                // Send frame to Flask server
+                const imageData = canvas.toDataURL('image/jpeg', 0.5);
+
+                // Send frame to Flask server (fire without waiting)
+                inFlight++;
                 fetch('/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ image: imageData })
                 }).then(() => {
+                    inFlight--;
                     // Update FPS counter
                     frameCount++;
                     const now = Date.now();
@@ -83,11 +124,66 @@
                         lastTime = now;
                     }
                 }).catch(err => {
+                    inFlight--;
                     console.error('Upload error:', err);
-                    status.textContent = 'Upload Error';
-                    status.style.color = 'red';
                 });
-            }, 100);  // Send frames at 10Hz
+            }, 100);  // 10Hz capture rate
+        }
+        function getCurrentFrame() {
+            const maxW = 320;
+            const scale = maxW / video.videoWidth;
+            const w = maxW;
+            const h = Math.round(video.videoHeight * scale);
+            canvas.width = w;
+            canvas.height = h;
+            ctx.drawImage(video, 0, 0, w, h);
+            return canvas.toDataURL('image/jpeg', 0.9);  // Higher quality for calibration
+        }
+
+        function captureCalibFrame() {
+            const calibStatus = document.getElementById('calibStatus');
+            calibStatus.textContent = 'Detecting corners...';
+            const imageData = getCurrentFrame();
+
+            fetch('/calibrate_frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    calibStatus.textContent = data.count + ' frames captured';
+                    document.getElementById('calibrateBtn').disabled = (data.count < 5);
+                } else {
+                    calibStatus.textContent = data.count + ' frames — checkerboard not found, try again';
+                }
+            }).catch(() => {
+                calibStatus.textContent = 'Error sending frame';
+            });
+        }
+
+        function runCalibration() {
+            const calibStatus = document.getElementById('calibStatus');
+            calibStatus.textContent = 'Calibrating...';
+
+            fetch('/calibrate_finish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    calibStatus.textContent = 'Done! error=' + data.error.toFixed(4)
+                        + ' fx=' + data.fx.toFixed(1) + ' fy=' + data.fy.toFixed(1);
+                } else {
+                    calibStatus.textContent = 'Failed: ' + data.message;
+                }
+            }).catch(() => {
+                calibStatus.textContent = 'Error during calibration';
+            });
+        }
+
+        function resetCalibration() {
+            fetch('/calibrate_reset', { method: 'POST' });
+            document.getElementById('calibStatus').textContent = '0 frames captured';
+            document.getElementById('calibrateBtn').disabled = true;
         }
     </script>
 </body>
