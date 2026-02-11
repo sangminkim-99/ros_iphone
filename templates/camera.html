@@ -1,0 +1,94 @@
+<!-- templates/camera.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>iPhone Camera to ROS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #333;
+        }
+        #status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>iPhone Camera to ROS Bridge</h1>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <p>Status: <span id="status">Disconnected</span></p>
+    <p>FPS: <span id="fps">0</span></p>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+        const fpsDisplay = document.getElementById('fps');
+        
+        let frameCount = 0;
+        let lastTime = Date.now();
+
+        // Request camera access
+        navigator.mediaDevices.getUserMedia({
+            video: { 
+                facingMode: 'environment',  // Use rear camera
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        }).then(stream => {
+            video.srcObject = stream;
+            status.textContent = 'Connected';
+            status.style.color = 'green';
+            startStreaming();
+        }).catch(err => {
+            console.error('Camera access error:', err);
+            status.textContent = 'Error: ' + err.message;
+            status.style.color = 'red';
+        });
+
+        function startStreaming() {
+            setInterval(() => {
+                // Set canvas size to match video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                // Draw current video frame to canvas
+                ctx.drawImage(video, 0, 0);
+                
+                // Convert canvas to base64 JPEG
+                const imageData = canvas.toDataURL('image/jpeg', 0.7);
+                
+                // Send frame to Flask server
+                fetch('/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageData })
+                }).then(() => {
+                    // Update FPS counter
+                    frameCount++;
+                    const now = Date.now();
+                    if (now - lastTime >= 1000) {
+                        fpsDisplay.textContent = frameCount;
+                        frameCount = 0;
+                        lastTime = now;
+                    }
+                }).catch(err => {
+                    console.error('Upload error:', err);
+                    status.textContent = 'Upload Error';
+                    status.style.color = 'red';
+                });
+            }, 100);  // Send frames at 10Hz
+        }
+    </script>
+</body>
+</html>

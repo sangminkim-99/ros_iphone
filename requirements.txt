@@ -1,0 +1,7 @@
+# requirements.txt
+flask
+flask-cors
+opencv-python
+numpy
+roslibpy
+pyopenssl
