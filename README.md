@@ -15,8 +15,9 @@ Run each command in a separate terminal (with `conda activate ros_webcam`):
 
 1. Start the ROS bridge server:
 ```bash
-roslaunch rosbridge_server rosbridge_websocket.launch
+roslaunch rosbridge_server rosbridge_websocket.launch port:=9001
 ```
+9001 port (9000 allocated for antigravity)
 
 2. Start the Flask server:
 ```bash
@@ -29,3 +30,12 @@ python app.py
 ```bash
 python camera_listener.py
 ```
+
+## ngrok (Network)
+```bash
+sudo snap install ngrok
+ngrok http https://localhost:5000
+```
+
+Add token:
+- ngrok config add-authtoken <token>
